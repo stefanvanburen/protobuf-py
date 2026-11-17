@@ -17,6 +17,7 @@ from __future__ import annotations
 import math
 from base64 import b64decode
 from dataclasses import dataclass, replace
+from json import loads
 from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
 from typing_extensions import assert_never
@@ -511,7 +512,7 @@ def _parse_int(desc: DescField | DescExtension, json: JsonValue) -> int:
     if not isinstance(json, bool) and isinstance(
         json, int
     ):  # isinstance(bool_value, int) is True
-        return json
+        return int(json)
 
     if isinstance(json, float):
         f = json
@@ -532,6 +533,34 @@ def _parse_int(desc: DescField | DescExtension, json: JsonValue) -> int:
         raise _field_error(desc, f"expected integer, got non-integer float: {json}")
 
     return int(f)
+
+
+class _NegativeZero(int):
+    """The JSON integer literal ``-0``: equal to ``0``, but ``-0.0`` as a float."""
+
+    __slots__ = ()
+
+    def __float__(self) -> float:
+        return -0.0
+
+
+_NEGATIVE_ZERO = _NegativeZero(0)
+
+
+def _parse_json_int(text: str) -> int:
+    return _NEGATIVE_ZERO if text == "-0" else int(text)
+
+
+def _load_json(data: str | bytes | bytearray) -> JsonValue:
+    """Parses JSON text, keeping the sign of the integer ``-0`` for float fields.
+
+    The ``parse_int`` hook slows down parsing integers, so it only runs when
+    ``-0`` appears in the text.
+    """
+    has_negative_zero = "-0" in data if isinstance(data, str) else b"-0" in data
+    if has_negative_zero:
+        return loads(data, parse_int=_parse_json_int)
+    return loads(data)
 
 
 def _parse_float(desc: DescField | DescExtension, json: JsonValue) -> float:

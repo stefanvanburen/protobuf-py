@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, cast
 
 import pytest
@@ -25,6 +26,7 @@ from protobuf import (
     message_from_json_value,
     message_to_json_value,
 )
+from protobuf.wkt import Value
 
 from .gen.enums_pb import ClosedColor, Color, EnumMessage
 from .gen.json_enum_names_pb import JsonEnumNames, Season
@@ -466,6 +468,31 @@ def test_use_proto_field_name(message: Message, expected: Any) -> None:
 def test_bytes_from_json(json_str: str) -> None:
     msg = Scalars.from_json(json.dumps({"bytesField": json_str}))
     assert msg.bytes_field == b"\xfb\xff"
+
+
+@pytest.mark.parametrize(
+    ("message_type", "json_str", "read"),
+    [
+        (Scalars, '{"doubleField": -0}', lambda m: m.double_field),
+        (Scalars, '{"floatField": -0}', lambda m: m.float_field),
+        (Scalars, '{"doubleField": "-0"}', lambda m: m.double_field),
+        (Lists, '{"doubleList": [-0]}', lambda m: m.double_list[0]),
+        (Maps, '{"stringToDouble": {"a": -0}}', lambda m: m.string_to_double["a"]),
+        (Value, "-0", lambda m: m.kind.value),
+    ],
+)
+def test_from_json_negative_zero(
+    message_type: type[Message], json_str: str, read: Any
+) -> None:
+    value = read(message_type.from_json(json_str))
+    assert value == 0
+    assert math.copysign(1, value) == -1
+
+
+def test_from_json_negative_zero_int() -> None:
+    msg = Scalars.from_json('{"int32Field": -0, "int64Field": -0}')
+    assert type(msg.int32_field) is int
+    assert type(msg.int64_field) is int
 
 
 def test_from_json_unknown_field() -> None:
